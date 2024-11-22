@@ -58,6 +58,46 @@ app.get('/', async (req, res) => {
   }
 });
 
+app.get('/products', async (req, res) => {
+  const cacheKey = 'productList'; // Key for caching the product list
+
+  try {
+    // Check if the product list is in Redis cache
+    const cachedProducts = await redisClient.get(cacheKey);
+
+    if (cachedProducts) {
+      // If cached data exists, return it
+      console.log('Returning products from Redis cache');
+      return res.json({
+        source: 'redis',
+        products: JSON.parse(cachedProducts),
+      });
+    } else {
+      // If no cached data, fetch from the database
+      console.log('Fetching products from MySQL database');
+
+      db.query('SELECT * FROM products', (err, results) => {
+        if (err) {
+          console.error('Error fetching products from DB:', err.message);
+          return res.status(500).send({ error: err.message });
+        }
+
+        // Store the product list in Redis cache for future requests
+        redisClient.set(cacheKey, JSON.stringify(results), {EX:3}); // Cache for 1 hour (3600 seconds)
+
+        // Return the product list from the database
+        res.json({
+          source: 'mysql',
+          products: results,
+        });
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching product list:', error.message);
+    res.status(500).send({ error: error.message });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
